@@ -1,0 +1,16 @@
+# Данные комиссии — никогда в git (ПД, журнал, отчёты, рабочие копии)
+/history/
+/work/
+/reports/
+run.lock
+history.quarantine
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Служебное
+Thumbs.db
+~$*
