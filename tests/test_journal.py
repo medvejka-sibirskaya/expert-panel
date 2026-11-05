@@ -184,6 +184,39 @@ def test_unclosed_transfer_event_only(tmp_path, journal):
     assert json.loads(rechecked.stdout)["status"] == "ok"
 
 
+# Тест 14 — повреждение в СЕРЕДИНЕ журнала: после повреждённой строки есть
+# валидные события → repair запрещён даже с --confirm, журнал не трогается,
+# нужен ручной разбор
+def test_middle_damage_manual_review(tmp_path, journal):
+    journal("append", "--run-id", "r1", "--event-id", "e1", "--type", "run_started",
+            root=tmp_path)
+
+    # повреждённая строка в середине (обрывок с \n — невалидный JSON)
+    with open(_history(tmp_path), "a", encoding="utf-8") as f:
+        f.write('{"seq":2,"run_id":"r1"\n')
+
+    # после повреждённой строки — валидное событие
+    journal("append", "--run-id", "r1", "--event-id", "e2", "--type",
+            "preflight_shown", root=tmp_path)
+
+    checked = journal("check", root=tmp_path)
+    assert checked.returncode == 4, checked.stdout
+    assert "ручной разбор" in checked.stdout
+
+    no_confirm = journal("repair", root=tmp_path)
+    assert no_confirm.returncode == 5, no_confirm.stdout
+    assert json.loads(no_confirm.stdout)["status"] == "manual_review_required"
+
+    confirmed = journal("repair", "--confirm", root=tmp_path)
+    assert confirmed.returncode == 5, confirmed.stdout
+    assert json.loads(confirmed.stdout)["status"] == "manual_review_required"
+
+    # журнал не тронут: quarantine не создан, валидные события на месте
+    assert not (tmp_path / "history" / "history.quarantine").exists()
+    listed = json.loads(journal("list", root=tmp_path).stdout)["events"]
+    assert len(listed) == 2
+
+
 # Тест 13 — Дубль event_id → явная ошибка
 def test_duplicate_event_id(tmp_path, journal):
     first = journal("append", "--run-id", "r1", "--event-id", "e1", "--type",

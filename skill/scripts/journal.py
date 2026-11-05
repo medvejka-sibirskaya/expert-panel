@@ -7,12 +7,15 @@
 - повтор того же event_id — явная ошибка (идемпотентность);
 - повреждённый хвост не трогается молча: перенос в history.quarantine
   с заголовком {repair_id, utc_ts, seq, причина} + запись journal_repaired
-  с тем же repair_id — ТОЛЬКО по подтверждению; если событие записать
-  не удалось, check видит незакрытый перенос и повторяет только запись события;
+  с тем же repair_id — ТОЛЬКО по подтверждению; автоматически — только
+  хвостовой блок, повреждение в середине — отказ и ручной разбор (exit 5);
+  если событие записать не удалось, check видит незакрытый перенос
+  и повторяет только запись события;
 - ПД и исходные пути в журнал не пишутся — только O-имена;
-- lock: run.lock (PID + run_id); живой чужой lock → отказ; lock мёртвого
-  процесса → снятие по подтверждению; обнаружение остатков work\\ от
-  незавершённых запусков.
+- lock: run.lock (PID + run_id) — эвристический признак активности запуска,
+  не доказательство: координатор передаёт --pid долгоживущего владельца
+  (живой чужой PID → отказ; мёртвый → снятие по подтверждению); обнаружение
+  остатков work\\ от незавершённых запусков.
 
 Пути берутся из --root (CLI), env EXPERT_PANEL_ROOT или дефолта D:\\expert-panel
 (пустое значение env игнорируется — работают дефолты).
@@ -179,10 +182,17 @@ def _quarantine_append(p: Paths, entry: dict) -> None:
 def _check_problems(p: Paths) -> tuple[list[str], int]:
     lines, valid, damaged = _read_state(p.history)
     problems: list[str] = []
-    for i, _ln in damaged:
-        problems.append(
-            f"строка {i}: повреждена (не парсится как JSON или оборвана без \\n) — "
-            "перенос в quarantine через repair --confirm")
+    if damaged:
+        max_valid_i = max((i for i, _ in valid), default=0)
+        min_damaged_i = min(i for i, _ in damaged)
+        middle = max_valid_i > min_damaged_i
+        hint = ("ручной разбор: автоматический repair запрещён — повреждение "
+                "в середине журнала" if middle else
+                "перенос в quarantine через repair --confirm")
+        for i, _ln in damaged:
+            problems.append(
+                f"строка {i}: повреждена (не парсится как JSON или оборвана "
+                f"без \\n) — {hint}")
     seqs = [ev.get("seq") for _, ev in valid]
     if any(not isinstance(s, int) for s in seqs):
         problems.append("seq: есть события без целочисленного seq")
@@ -314,6 +324,18 @@ def cmd_repair(p: Paths, args) -> None:
     if not damaged and not unclosed:
         _emit({"status": "nothing_to_do"})
         return
+    if damaged:
+        # автоматически — только хвостовой блок; повреждение в середине
+        # (после него есть валидные события) — ручной разбор
+        max_valid_i = max((i for i, _ in valid), default=0)
+        min_damaged_i = min(i for i, _ in damaged)
+        if max_valid_i > min_damaged_i:
+            _emit({"status": "manual_review_required",
+                   "reason": "повреждение в середине журнала: после повреждённой "
+                             "строки есть валидные события — автоматический repair "
+                             "запрещён, нужен ручной разбор",
+                   "damaged_lines": [i for i, _ in damaged]})
+            sys.exit(5)
     if not args.confirm:
         _emit({"status": "confirm_required",
                "damaged_lines": [i for i, _ in damaged],
