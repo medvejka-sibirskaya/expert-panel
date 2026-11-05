@@ -13,6 +13,9 @@
 (tests/README.md). По ревью Жоры №4 (п. 4.4): _validate проверяет тип
 preflight_summary (объект), оба формата отчёта рендерятся в памяти
 и записываются только после успешного рендеринга — частичной записи нет.
+v1.4 (редактура): опциональное поле editor_stage {status, fixed, unfixed}
+валидируется в _validate, выводится в JSON и рендерится в MD как раздел
+«Результаты редактуры» со ссылками на edited_O*.md и changes_O*.md.
 """
 from __future__ import annotations
 
@@ -97,6 +100,16 @@ def _validate(data: dict) -> list[str]:
             problems.append(field + " должен быть списком")
     if not isinstance(data.get("scores"), dict):
         problems.append("scores должен быть объектом критерий → оценка")
+    es = data.get("editor_stage")
+    if es is not None:
+        if not isinstance(es, dict):
+            problems.append("editor_stage должен быть объектом {status, fixed, unfixed}")
+        else:
+            if not isinstance(es.get("status"), str):
+                problems.append("editor_stage.status должен быть строкой")
+            for field in ("fixed", "unfixed"):
+                if field in es and not isinstance(es[field], list):
+                    problems.append(f"editor_stage.{field} должен быть списком")
     return problems
 
 
@@ -199,6 +212,19 @@ def _render_md(data: dict) -> str:
         for r in data["accepted_risks"]:
             a(f"- {r}")
         a("")
+    es = data.get("editor_stage")
+    if es:
+        a("## Результаты редактуры")
+        a("")
+        a(f"- Статус: {es.get('status', '')}")
+        fixed = es.get("fixed") or []
+        unfixed = es.get("unfixed") or []
+        if fixed:
+            a(f"- Исправлено: {', '.join(str(x) for x in fixed)}")
+        if unfixed:
+            a(f"- Не исправлено: {', '.join(str(x) for x in unfixed)}")
+        a("- Файлы: `edited_O*.md` (исправленная копия) и `changes_O*.md` (пояснения).")
+        a("")
     a("## Срок хранения")
     a("")
     a(f"Отчёт хранится до: {data.get('retention_until', '')} (retention_days; "
@@ -213,7 +239,7 @@ def build(verdict_data: dict, out_dir: str, retention_days: int = DEFAULT_RETENT
     verdict_data — словарь по схеме ТЗ §9 (run_id, object, goal, preflight_summary,
     findings, verdict, scores, expert_disagreements, checked_areas,
     unchecked_areas, limitations, recommendations, token_stats,
-    accepted_risks, retention_until, schema_version).
+    accepted_risks, editor_stage (опционально), retention_until, schema_version).
     """
     problems = _validate(verdict_data)
     if problems:

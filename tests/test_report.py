@@ -78,3 +78,29 @@ def test_preflight_summary_must_be_object_no_partial_files(tmp_path):
         report.build(verdict, str(out_dir))
 
     assert not out_dir.exists() or not any(out_dir.iterdir())
+
+
+# v1.4 — редактура: editor_stage рендерится в MD и сохраняется в JSON
+def test_editor_stage_rendered(tmp_path):
+    verdict = _minimal_verdict()
+    verdict["editor_stage"] = {"status": "выполнена", "fixed": ["F-1"], "unfixed": []}
+    out_dir = tmp_path / "out"
+    report.build(verdict, str(out_dir))
+
+    md_text = (tmp_path / "out" / "t-run-1.md").read_text(encoding="utf-8")
+    data = json.loads((tmp_path / "out" / "t-run-1.json").read_text(encoding="utf-8"))
+    assert "## Результаты редактуры" in md_text
+    assert "F-1" in md_text
+    assert data["editor_stage"] == {"status": "выполнена", "fixed": ["F-1"], "unfixed": []}
+
+
+# v1.4 — editor_stage не объект → SchemaError, файлов отчёта нет
+def test_editor_stage_must_be_object(tmp_path):
+    verdict = _minimal_verdict()
+    verdict["editor_stage"] = "выполнена"
+    out_dir = tmp_path / "out"
+
+    with pytest.raises(report.SchemaError):
+        report.build(verdict, str(out_dir))
+
+    assert not out_dir.exists() or not any(out_dir.iterdir())
