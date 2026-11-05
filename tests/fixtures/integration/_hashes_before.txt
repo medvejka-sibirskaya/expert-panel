@@ -1,0 +1,13 @@
+﻿
+
+Hash : 0CAEF8BD6FC970E372FADC78F78AF4135730AD374DB6271793E8F96F9C775336
+Path : D:\expert-panel\tests\fixtures\integration\resume_dirty.md
+
+Hash : 2DE8356F845B4007DDC2C93069A1F4FE00AD2A6A5AAA4C28EBAAAB678CBA41FE
+Path : D:\expert-panel\tests\fixtures\integration\resume_clean.md
+
+Hash : 69635DBD327AC2E7398AFD226992DDAA21E08CEFA2C499D9B12E6DBF43EF710A
+Path : D:\expert-panel\tests\fixtures\integration\broken.docx
+
+
+

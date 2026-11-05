@@ -9,7 +9,10 @@
   EXPERT_PANEL_RETENTION_DAYS, пустое значение = дефолт).
 Исходные пути и имена материалов в отчёты не пишутся — только O-имена.
 
-СТАТУС РЕАЛИЗАЦИИ: этап 0.2 — реализовано; тестируется тестами 5, 7 (tests/README.md).
+СТАТУС РЕАЛИЗАЦИИ: этап 0.2 — реализовано; тестируется тестами 5, 7
+(tests/README.md). По ревью Жоры №4 (п. 4.4): _validate проверяет тип
+preflight_summary (объект), оба формата отчёта рендерятся в памяти
+и записываются только после успешного рендеринга — частичной записи нет.
 """
 from __future__ import annotations
 
@@ -87,6 +90,8 @@ def _validate(data: dict) -> list[str]:
                     problems.append(f"замечание {i}: отсутствует поле {field}")
     else:
         problems.append("findings должен быть списком")
+    if not isinstance(data.get("preflight_summary"), dict):
+        problems.append("preflight_summary должен быть объектом {experts, models, depth}")
     for field in ("checked_areas", "unchecked_areas", "limitations", "recommendations"):
         if field in data and not isinstance(data[field], list):
             problems.append(field + " должен быть списком")
@@ -224,8 +229,12 @@ def build(verdict_data: dict, out_dir: str, retention_days: int = DEFAULT_RETENT
     out.mkdir(parents=True, exist_ok=True)
     json_path = out / f"{run_id}.json"
     md_path = out / f"{run_id}.md"
-    json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    md_path.write_text(_render_md(data), encoding="utf-8")
+    # оба формата — сначала в памяти, запись только после успешного рендеринга
+    # обоих: ошибка формирования не оставляет частично записанный отчёт
+    json_text = json.dumps(data, ensure_ascii=False, indent=2)
+    md_text = _render_md(data)
+    json_path.write_text(json_text, encoding="utf-8")
+    md_path.write_text(md_text, encoding="utf-8")
     return str(md_path), str(json_path)
 
 

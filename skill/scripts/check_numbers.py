@@ -5,7 +5,10 @@
 семантику проверяет эксперт-аудитор фактов, не скрипт (принцип ТЗ §2.3).
 
 СТАТУС РЕАЛИЗАЦИИ: этап 0.2 — реализовано (MVP-набор: даты, порядок дат,
-суммы «a + b = c», нумерация списков).
+суммы «a + b = c», нумерация списков). По ревью Жоры №4 (п. 4.3) добавлен
+пресет resume: заявленный стаж vs сумма явных периодов по годам —
+предупреждение для экспертов, не вердикт (пересечения не задваиваются,
+неточные даты не учётываются — по ним отдельное предупреждение).
 """
 from __future__ import annotations
 
@@ -25,6 +28,12 @@ DATE_PAIR_RE = re.compile(
 _NUM = r"(\d+(?: \d{3})*(?:[.,]\d+)?)"
 SUM_RE = re.compile(_NUM + r"\s*\+\s*" + _NUM + r"\s*=\s*" + _NUM)
 LIST_ITEM_RE = re.compile(r"^\s*(\d+)[.)]\s", re.MULTILINE)
+# пресет resume: периоды работы год–год и заявленный общий стаж
+PERIOD_RE = re.compile(r"(?<!\d)(\d{4})\s*[–—−-]\s*(\d{4})(?!\d)")
+PERIOD_HALF_RE = re.compile(r"(?<!\d)(\d{4})\s*[–—−-]\s*(?!\d{4})")
+EXP_RE = re.compile(
+    r"общ[а-яё]*\s+(?:опыт|стаж)(?:\s+работы)?\D{0,30}?(\d{1,2})\s*(?:лет|год[а-яё]*)\b",
+    re.IGNORECASE)
 
 
 def _valid_date(d: int, m: int, y: int) -> bool:
@@ -90,22 +99,75 @@ def _check_numbering(o_name: str, text: str, findings: list[dict]) -> None:
         prev = n  # меньший номер = начало новой схемы, счёт продолжается с него
 
 
-def check(o_name: str, text: str) -> list[dict]:
+def _check_experience(o_name: str, text: str, findings: list[dict]) -> None:
+    """Пресет resume: заявленный общий стаж vs сумма явных периодов (по годам).
+
+    Предупреждение для экспертов и судьи, не вердикт (ревью Жоры №4, п. 4.3):
+    учитываются только полные периоды «год–год»; пересекающиеся не задваиваются;
+    периоды с неточной датой не превращаются в точные значения — по ним
+    отдельное предупреждение. Расхождение |сумма − заявлено| ≥ 1 года —
+    вычислимая находка.
+    """
+    stated_m = EXP_RE.search(text)
+    if stated_m is None:
+        return  # заявленного стажа нет — сравнивать нечего
+    spans = [(m.start(), m.end()) for m in PERIOD_RE.finditer(text)]
+    for m in PERIOD_HALF_RE.finditer(text):
+        if any(ps <= m.start() < pe for ps, pe in spans):
+            continue  # часть уже учтённого полного периода
+        findings.append(_finding(o_name, scan_secrets.anchor_for(text, m.start()),
+                                 "experience_period_uncounted",
+                                 "период с неточной датой не учтён в сумме стажа: "
+                                 + m.group(0).strip()))
+    periods: list[tuple[int, int]] = []
+    for m in PERIOD_RE.finditer(text):
+        y1, y2 = int(m.group(1)), int(m.group(2))
+        if y1 > y2:
+            findings.append(_finding(o_name, scan_secrets.anchor_for(text, m.start()),
+                                     "experience_period_order",
+                                     f"конец периода раньше начала: {m.group(0).strip()}"))
+            continue
+        periods.append((y1, y2))
+    if not periods:
+        return  # явных полных периодов нет — предупреждения о неточных уже выданы
+    merged: list[list[int]] = []
+    for y1, y2 in sorted(periods):
+        if merged and y1 <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], y2)
+        else:
+            merged.append([y1, y2])
+    total = sum(e - s for s, e in merged)
+    stated = int(stated_m.group(1))
+    if abs(total - stated) >= 1:
+        findings.append(_finding(o_name,
+                                 scan_secrets.anchor_for(text, stated_m.start()),
+                                 "experience_sum_mismatch",
+                                 f"заявлено {stated} лет, сумма явных периодов по годам "
+                                 f"(пересечения не задваиваются) — {total} лет; "
+                                 "предупреждение для экспертов, не вердикт"))
+
+
+def check(o_name: str, text: str, preset: str = "default") -> list[dict]:
     """Проверить вычислимое в тексте разрешённой копии.
 
     Возвращает список находок для координатора: [{"o_name", "anchor",
-    "check", "result"}]. Решений не принимает.
+    "check", "result"}]. Решений не принимает. preset: default — общий
+    набор; resume — общий + стаж (пилотный тип «резюме»).
     """
     findings: list[dict] = []
     _check_dates(o_name, text, findings)
     _check_sums(o_name, text, findings)
     _check_numbering(o_name, text, findings)
+    if preset == "resume":
+        _check_experience(o_name, text, findings)
     return findings
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Вычислимые проверки: числа/даты/схемы (ТЗ §13)")
     parser.add_argument("--o-name", required=True, help="имя материала (O1, O2…)")
+    parser.add_argument("--preset", choices=["default", "resume"], default="default",
+                        help="набор проверок: default — общий; resume — общий + стаж (пилот)")
     parser.add_argument("path", help="путь к разрешённой копии")
     args = parser.parse_args()
 
@@ -114,8 +176,9 @@ def main() -> None:
         print(json.dumps({"status": "error", "reason": "файл не найден"}, ensure_ascii=False))
         sys.exit(1)
     text = path.read_text(encoding="utf-8", errors="replace")
-    print(json.dumps({"status": "ok", "o_name": args.o_name,
-                      "findings": check(args.o_name, text)}, ensure_ascii=False))
+    print(json.dumps({"status": "ok", "o_name": args.o_name, "preset": args.preset,
+                      "findings": check(args.o_name, text, args.preset)},
+                     ensure_ascii=False))
 
 
 if __name__ == "__main__":

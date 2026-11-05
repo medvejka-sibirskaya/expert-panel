@@ -1,8 +1,12 @@
-"""Тесты 5, 7 (spec-etap0.md): пост-маска в отчёте, пустой env → дефолт 90."""
+"""Тесты 5, 7 (spec-etap0.md): пост-маска в отчёте, пустой env → дефолт 90.
+Тест по ревью Жоры №4 (п. 4.4): preflight_summary не объект → invalid_schema,
+ни одного файла отчёта не создаётся."""
 from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 import report
 
@@ -62,3 +66,15 @@ def test_empty_env_default_retention(tmp_path, run_cli):
     data = json.loads((tmp_path / "out" / "t-run-1.json").read_text(encoding="utf-8"))
     expected = (datetime.now(timezone.utc) + timedelta(days=90)).date()
     assert data["retention_until"] == expected.isoformat()
+
+
+# Ревью Жоры №4, п. 4.4 — preflight_summary строкой: invalid_schema, файлов нет
+def test_preflight_summary_must_be_object_no_partial_files(tmp_path):
+    verdict = _minimal_verdict()
+    verdict["preflight_summary"] = "строка вместо объекта"
+    out_dir = tmp_path / "out"
+
+    with pytest.raises(report.SchemaError):
+        report.build(verdict, str(out_dir))
+
+    assert not out_dir.exists() or not any(out_dir.iterdir())
