@@ -38,8 +38,12 @@ description: Независимая экспертная комиссия для
 **0. Lock и остатки.** `python scripts\journal.py lock --run-id <run_id>
 --pid <PID>` создаёт `D:\expert-panel\run.lock` (run_id + PID долгоживущего
 процесса Claude Code; PID — эвристика «запуск, вероятно, активен», а не
-доказательство). Run_id из ответа lock используется во всех следующих шагах.
-Живой PID в чужом lock → отказ в запуске. Мёртвый PID (аварийное завершение) →
+доказательство). Run_id координатор генерирует сам (UUID) до вызова lock
+и использует его во всех следующих шагах. Сразу после успешного создания lock
+координатор записывает старт: `python scripts\journal.py append --run-id <run_id>
+--event-id <новый UUID> --type run_started --data '<JSON>'` — без run_started
+запуск остаётся незакрытой историей для `journal.py check`. Живой PID в чужом
+lock → отказ в запуске. Мёртвый PID (аварийное завершение) →
 снятие (`--confirm-stale`) только по подтверждению Медвежки; надёжно определить
 PID нельзя → lock остаётся эвристической защитой, надёжность не имитировать.
 Остатки `work\` от незавершённых запусков показывает `journal.py remains`;
@@ -71,7 +75,10 @@ openpyxl; pdf — текстовый слой. Маркеры привязки: 
 
 **5. Preflight** (состав ниже) → показать Медвежке.
 
-**6. Явное разрешение.**
+**6. Явное разрешение.** Нет разрешения (отказ, молчание, «посмотрим» ≠
+разрешение) → координатор записывает run_stopped (причина: Preflight не
+утверждён), снимает lock (`journal.py unlock --run-id <run_id>`),
+разрешённые копии не создаёт.
 
 **7. Разрешённые копии — после выбора режима.**
 `python scripts\scan_secrets.py prepare --o-name O1 --path <путь> --mode mask|exclude --work-dir D:\expert-panel\work\<run_id>`:
@@ -186,7 +193,10 @@ preflight_shown, preflight_approved, finding_detected (O-имя, маркер, �
 значения), phase_experts_started, expert_finished (роль, модель, оценка токенов),
 checkpoint_passed, judge_finished, report_saved (пути отчётов, retention_until),
 risk_accepted_by_user, retention_cleanup_proposed, report_deleted, run_finished,
-run_stopped (причина), journal_repaired (repair_id, описание). ПД и исходные
+run_stopped (причина), journal_repaired (repair_id, описание). Правило
+фиксации: координатор записывает соответствующее событие при наступлении
+каждого события из списка — без исключений; команда одна (append ниже),
+отдельные команды для этапов не расписаны. ПД и исходные
 пути в журнал не пишутся — только O-имена. Запись события:
 `python scripts\journal.py append --run-id <run_id> --event-id <event_id>
 --type <тип> --data '<JSON>'`. Повторная запись того же event_id — ошибка
