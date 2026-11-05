@@ -199,7 +199,8 @@ run_stopped (причина), journal_repaired (repair_id, описание). П
 отдельные команды для этапов не расписаны. ПД и исходные
 пути в журнал не пишутся — только O-имена. Запись события:
 `python scripts\journal.py append --run-id <run_id> --event-id <event_id>
---type <тип> --data '<JSON>'`. Повторная запись того же event_id — ошибка
+--type <тип> --data '<JSON>'` (в Windows — через bash: PowerShell 5.1
+искажает кавычки JSON в аргументах нативных процессов). Повторная запись того же event_id — ошибка
 идемпотентности (exit 3): повтор не отправлять, разбирать причину. Целостность —
 `journal.py check` (exit 4 — есть повреждения). Повреждённый хвост — перенос
 в quarantine (`journal.py repair --confirm`) с repair_id, закрывается записью
