@@ -1,0 +1,3 @@
+# Dev-зависимости (в образ/прод не попадают)
+-r requirements.txt
+pytest

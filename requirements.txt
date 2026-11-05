@@ -1,0 +1,4 @@
+# Рантайм-зависимости скриптов Expert Panel (ТЗ §13)
+python-docx
+openpyxl
+pypdf
