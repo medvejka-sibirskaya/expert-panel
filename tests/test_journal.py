@@ -5,6 +5,9 @@ import ctypes
 import json
 import os
 import subprocess
+import sys
+
+import pytest
 
 
 def _history(root):
@@ -57,6 +60,10 @@ def _dead_pid() -> int:
 
 
 # Тест 9 — Lock мёртвого pid → снятие по подтверждению
+# PID-эвристика (cmd + ctypes.windll) — Windows-only; на других ОС тест пропускается
+# с пометкой, а не падает (независимая проверка Жоры, Linux/Python 3.12).
+@pytest.mark.skipif(sys.platform != "win32",
+                    reason="PID-эвристика через cmd/ctypes.windll — только Windows")
 def test_stale_lock_confirm(tmp_path, journal):
     dead_pid = _dead_pid()
 

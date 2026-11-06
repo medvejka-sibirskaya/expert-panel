@@ -90,6 +90,34 @@ def test_range_given_quote_absent_keeps_old_reason():
     assert "не найдена в указанном файле" in res["reason"]
 
 
+def test_empty_line_inside_range_no_false_mismatch():
+    # два соседних пробела после join пустой строки не рвут цитату
+    res = ve.verify_finding(finding("alpha beta", "O1, строки 1–3"),
+                            {"O1": "alpha\n\nbeta\n"})
+    assert res["result"] == "verified"
+
+
+def test_fragment_lines_reports_lines_even_with_blank_lines():
+    res = ve.verify_finding(finding("beta", "O1, строки 1–1"),
+                            {"O1": "alpha\n\nbeta\n"})
+    assert res["result"] == "mismatch"
+    assert "строки 3" in res["reason"]
+
+
+def test_verbal_line_number_falls_back_to_file():
+    # «строка семь» — словесное описание, диапазона нет: проверка по файлу + пометка
+    res = ve.verify_finding(finding("Alpha beta gamma", "O1, строка семь"), {"O1": COPY})
+    assert res["result"] == "verified"
+    assert res["reason"] == "расположение не проверено"
+
+
+def test_digit_junk_location_unverifiable():
+    # «строка 7abc» — номер заявлен, но нераспознаваем: честный unverifiable
+    res = ve.verify_finding(finding("Alpha beta gamma", "O1, строка 7abc"), {"O1": COPY})
+    assert res["result"] == "unverifiable"
+    assert "не распознан" in res["reason"]
+
+
 def test_cli_end_to_end(run_cli, tmp_path):
     (tmp_path / "O1.md").write_text(COPY, encoding="utf-8")
     (tmp_path / "manifest.json").write_text(

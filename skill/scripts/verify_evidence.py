@@ -75,6 +75,11 @@ def _line_range(location: object) -> tuple[int, int] | None:
         return n, n
     if re.search(r"[–—−-]", candidate):
         raise ValueError("некорректный диапазон строк: нужны два целых числа")
+    if re.search(r"\d", candidate):
+        # «строка 7abc» и т.п.: строка-номер заявлена, но нераспознаваема —
+        # честный unverifiable вместо тихой проверки по всему файлу
+        raise ValueError("некорректный диапазон строк: номер строки не распознан")
+    # словесное описание («строка семь», «строки из манифеста») — диапазона нет
     return None
 
 
@@ -87,7 +92,7 @@ def _fragment_lines(fragment: str, lines: list[str]) -> str:
         intervals.append((offset, offset + len(line), number))
         offset += len(line) + 1
     spans: list[str] = []
-    pattern = re.escape(fragment).replace(r"\ ", r"\s+")
+    pattern = r"\s+".join(re.escape(part) for part in fragment.split(" ") if part)
     for match in re.finditer(r"(?=(" + pattern + r"))", text):
         start, end = match.span(1)
         numbers = [number for left, right, number in intervals
@@ -148,7 +153,7 @@ def verify_finding(finding: dict, texts: dict[str, str]) -> dict:
     full = _normalize(evidence)
     if bounds is not None:
         lo, hi = bounds
-        selected = " ".join(lines[lo - 1:hi])
+        selected = _normalize(" ".join(lines[lo - 1:hi]))
         if all(fr in selected for fr in frags):
             return {"id": fid, "o_name": o_name, "result": "verified", "reason": ""}
         if all(fr in text for fr in frags):
